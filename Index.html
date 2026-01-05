@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="utf-8" />
-    <title>Magazyn - Numeracja Pionowa</title>
+    <title>Magazyn - Generator Mapy</title>
     <style>
         :root{ --ink:#e5e7eb; --bg:#0b1220; --panel:#111827; }
         body{margin:0;background:var(--bg);color:var(--ink);font-family:sans-serif;padding:20px}
@@ -48,7 +48,6 @@
             container.style.gridAutoRows = `${h}px`;
             container.style.gap = "10px";
 
-            // Mapowanie nazw w pionie
             const nameMap = generateVerticalNames(r, c);
 
             for (let i = 0; i < r * c; i++) {
@@ -66,7 +65,6 @@
                 } else {
                     cell.innerHTML = `<button class="act" style="background:#059669" onclick="toggle('${key}')">+</button>`;
                 }
-                
                 container.appendChild(cell);
             }
         }
@@ -74,12 +72,9 @@
         function generateVerticalNames(maxR, maxC) {
             let names = {};
             let currentPathLabel = 1;
-
-            // Logika: Idziemy kolumna po kolumnie (c), a wewnątrz kolumny wierszami (r)
             for (let c = 1; c <= maxC; c++) {
                 let currentPosLabel = 1;
                 let columnHasActive = false;
-                
                 for (let r = 1; r <= maxR; r++) {
                     const key = `${r}-${c}`;
                     if (!removed.has(key)) {
@@ -120,7 +115,7 @@
 
                 document.getElementById('status').style.display = 'block';
                 setTimeout(() => document.getElementById('status').style.display = 'none', 3000);
-            } catch (err) { alert("Błąd zapisu. Upewnij się, że wybrałeś folder."); }
+            } catch (err) { alert("Wybierz folder, aby zapisać."); }
         }
 
         function generateHTML(cfg) {
@@ -142,12 +137,12 @@
     </style>
 </head>
 <body>
-    <button onclick="exportToExcel()" style="background:#166534; color:white; width:auto; margin-bottom:20px; padding: 10px 20px;">Eksportuj Stan do Excel</button>
+    <button onclick="exportToExcel()" style="background:#166534; color:white; width:auto; margin-bottom:20px; padding: 10px 20px;">Eksportuj do Excel</button>
     <div class="grid" id="mainGrid"></div>
     <div id="modal" class="modal"><div class="modal-box"><h3 id="mTitle"></h3><div id="inps"></div><button onclick="save()" style="background:#2563eb; color:white">Zapisz</button><button onclick="closeM()" style="background:#4b5563; color:white">Anuluj</button></div></div>
     <script>
         const cfg = ${JSON.stringify(cfg)};
-        const storage = JSON.parse(localStorage.getItem('wh_v4_data') || '{}');
+        const storage = JSON.parse(localStorage.getItem('wh_v5_data') || '{}');
         let currentK = '';
 
         function draw() {
@@ -157,12 +152,13 @@
                 for(let c=1; c<=cfg.cols; c++) {
                     const k = r+'-'+c;
                     const cell = document.createElement('div');
-                    if(cfg.removed.includes(k)) { cell.className = 'cell hidden'; } 
-                    else {
+                    if(cfg.removed.includes(k)) { 
+                        cell.className = 'cell hidden'; 
+                    } else {
                         const items = storage[k] || ['','','','',''];
                         const filled = items.filter(x => x.trim() !== '').length;
                         cell.className = 'cell' + (filled > 0 ? ' has-items' : '');
-                        cell.innerHTML = '<div class="label">'+cfg.names[k]+'</div>' + (filled > 0 ? '<div style="font-size:10px; color:#9ca3af">'+filled+'/5</div>' : '');
+                        cell.innerHTML = '<div class="label">'+(cfg.names[k] || k)+'</div>' + (filled > 0 ? '<div style="font-size:10px; color:#9ca3af">'+filled+'/5</div>' : '');
                         cell.onclick = () => openM(k);
                     }
                     g.appendChild(cell);
@@ -171,7 +167,7 @@
         }
 
         function openM(k) {
-            currentK = k; document.getElementById('mTitle').innerText = cfg.names[k];
+            currentK = k; document.getElementById('mTitle').innerText = cfg.names[k] || k;
             const items = storage[k] || ['','','','',''];
             let h = ''; for(let i=0; i<5; i++) h += '<input type="text" id="i'+i+'" value="'+items[i]+'" placeholder="Pozycja '+(i+1)+'">';
             document.getElementById('inps').innerHTML = h;
@@ -182,20 +178,22 @@
         
         function save() {
             const vals = []; for(let i=0; i<5; i++) vals.push(document.getElementById('i'+i).value);
-            storage[currentK] = vals; localStorage.setItem('wh_v4_data', JSON.stringify(storage));
+            storage[currentK] = vals; localStorage.setItem('wh_v5_data', JSON.stringify(storage));
             closeM(); draw();
         }
 
         function exportToExcel() {
             let csv = "\\uFEFFLokalizacja;Pozycja;Towar\\n";
-            // Sortowanie do excel: pionami
             let sortedKeys = Object.keys(cfg.names).sort((a,b) => {
                 let [r1, c1] = a.split('-').map(Number); let [r2, c2] = b.split('-').map(Number);
                 return c1 !== c2 ? c1 - c2 : r1 - r2;
             });
             sortedKeys.forEach(k => {
                 const items = storage[k] || ['','','','',''];
-                for(let i=0; i<5; i++) csv += '"'+cfg.names[k]+'";'+(i+1)+';"'+(items[i] || '0')+'"\\n';
+                for(let i=0; i<5; i++) {
+                    let val = (items[i] && items[i].trim() !== '') ? items[i].replace(/;/g, ",") : "0";
+                    csv += '"' + cfg.names[k] + '";' + (i+1) + ';"' + val + '"\\n';
+                }
             });
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
