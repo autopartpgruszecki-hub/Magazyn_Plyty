@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8" />
+    <title>Magazyn - Numeracja Pionowa</title>
+    <style>
+        :root{ --ink:#e5e7eb; --bg:#0b1220; --panel:#111827; }
+        body{margin:0;background:var(--bg);color:var(--ink);font-family:sans-serif;padding:20px}
+        .card{background:var(--panel);border:1px solid #1f2937;border-radius:12px;padding:16px;margin-bottom:20px}
+        .toolbar{display:flex;flex-wrap:wrap;gap:15px;align-items:end}
+        .field{display:grid;gap:5px} label{font-size:12px;color:#9ca3af}
+        input{padding:8px;border-radius:6px;background:#0d1426;border:1px solid #263044;color:white;width:80px}
+        .btn{padding:10px 20px;border-radius:8px;border:none;background:#2563eb;color:white;font-weight:bold;cursor:pointer}
+        .btn-exp{background:#059669}
+        .grid{display:grid;background:#0a0f1c;border-radius:12px;padding:20px;overflow:auto}
+        .cell{background:#1e293b;border:1px solid #334155;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;min-width:50px;min-height:50px}
+        .cell.off{opacity:0.1; border-style: dashed;}
+        .act{position:absolute;top:2px;right:2px;background:#ef4444;border:none;color:white;font-size:10px;cursor:pointer;border-radius:3px;z-index:5}
+        .status-msg { margin-top: 10px; color: #10b981; font-weight: bold; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="card toolbar">
+        <div class="field"><label>Kolumny (Piony)</label><input id="cols" type="number" value="10" onchange="render()"></div>
+        <div class="field"><label>Wiersze (Poziomy)</label><input id="rows" type="number" value="6" onchange="render()"></div>
+        <div class="field"><label>Szerokość (px)</label><input id="w" type="number" value="100" onchange="render()"></div>
+        <div class="field"><label>Wysokość (px)</label><input id="h" type="number" value="70" onchange="render()"></div>
+        <button onclick="render()" class="btn">Odśwież</button>
+        <button onclick="saveToFolder()" class="btn btn-exp">Zapisz Mapę</button>
+        <div id="status" class="status-msg">Zapisano pomyślnie w folderze /Mapa</div>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <script>
+        let removed = new Set();
+
+        function render() {
+            const c = +document.getElementById('cols').value;
+            const r = +document.getElementById('rows').value;
+            const w = +document.getElementById('w').value;
+            const h = +document.getElementById('h').value;
+            
+            const container = document.getElementById('grid');
+            container.innerHTML = '';
+            container.style.gridTemplateColumns = `repeat(${c}, ${w}px)`;
+            container.style.gridAutoRows = `${h}px`;
+            container.style.gap = "10px";
+
+            // Mapowanie nazw w pionie
+            const nameMap = generateVerticalNames(r, c);
+
+            for (let i = 0; i < r * c; i++) {
+                const row = Math.floor(i / c) + 1;
+                const col = (i % c) + 1;
+                const key = `${row}-${col}`;
+                const isOff = removed.has(key);
+                
+                const cell = document.createElement('div');
+                cell.className = 'cell' + (isOff ? ' off' : '');
+                
+                if(!isOff) {
+                    cell.innerHTML = `<span style="font-weight:bold">${nameMap[key]}</span>
+                                     <button class="act" onclick="toggle('${key}')">X</button>`;
+                } else {
+                    cell.innerHTML = `<button class="act" style="background:#059669" onclick="toggle('${key}')">+</button>`;
+                }
+                
+                container.appendChild(cell);
+            }
+        }
+
+        function generateVerticalNames(maxR, maxC) {
+            let names = {};
+            let currentPathLabel = 1;
+
+            // Logika: Idziemy kolumna po kolumnie (c), a wewnątrz kolumny wierszami (r)
+            for (let c = 1; c <= maxC; c++) {
+                let currentPosLabel = 1;
+                let columnHasActive = false;
+                
+                for (let r = 1; r <= maxR; r++) {
+                    const key = `${r}-${c}`;
+                    if (!removed.has(key)) {
+                        names[key] = `P-${currentPathLabel}-${currentPosLabel}`;
+                        currentPosLabel++;
+                        columnHasActive = true;
+                    }
+                }
+                if (columnHasActive) currentPathLabel++;
+            }
+            return names;
+        }
+
+        function toggle(key) {
+            if(removed.has(key)) removed.delete(key); else removed.add(key);
+            render();
+        }
+
+        async function saveToFolder() {
+            try {
+                const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                const mapaDirHandle = await rootHandle.getDirectoryHandle('Mapa', { create: true });
+                
+                const r = +document.getElementById('rows').value;
+                const c = +document.getElementById('cols').value;
+                const config = {
+                    cols: c, rows: r,
+                    w: document.getElementById('w').value,
+                    h: document.getElementById('h').value,
+                    removed: Array.from(removed),
+                    names: generateVerticalNames(r, c)
+                };
+
+                const fileHandle = await mapaDirHandle.getFileHandle('mapa.html', { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(generateHTML(config));
+                await writable.close();
+
+                document.getElementById('status').style.display = 'block';
+                setTimeout(() => document.getElementById('status').style.display = 'none', 3000);
+            } catch (err) { alert("Błąd zapisu. Upewnij się, że wybrałeś folder."); }
+        }
+
+        function generateHTML(cfg) {
+            return `<!doctype html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { background: #0b1220; color: #e5e7eb; font-family: sans-serif; padding: 20px; }
+        .grid { display: grid; gap: 10px; grid-template-columns: repeat(${cfg.cols}, ${cfg.w}px); }
+        .cell { background: #1e293b; border: 1px solid #334155; border-radius: 8px; height: ${cfg.h}px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
+        .cell.hidden { visibility: hidden; }
+        .cell.has-items { border-left: 5px solid #10b981; background: #1f2937; }
+        .label { font-weight: bold; font-size:13px; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; z-index: 100;}
+        .modal-box { background: #1f2937; padding: 20px; border-radius: 12px; width: 300px; border: 1px solid #374151; }
+        input { width: 100%; padding: 8px; margin: 5px 0; background: #0d1426; border: 1px solid #374151; color: white; border-radius: 4px; box-sizing: border-box; }
+        button { padding: 10px; width: 100%; border: none; cursor: pointer; font-weight: bold; margin-top: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <button onclick="exportToExcel()" style="background:#166534; color:white; width:auto; margin-bottom:20px; padding: 10px 20px;">Eksportuj Stan do Excel</button>
+    <div class="grid" id="mainGrid"></div>
+    <div id="modal" class="modal"><div class="modal-box"><h3 id="mTitle"></h3><div id="inps"></div><button onclick="save()" style="background:#2563eb; color:white">Zapisz</button><button onclick="closeM()" style="background:#4b5563; color:white">Anuluj</button></div></div>
+    <script>
+        const cfg = ${JSON.stringify(cfg)};
+        const storage = JSON.parse(localStorage.getItem('wh_v4_data') || '{}');
+        let currentK = '';
+
+        function draw() {
+            const g = document.getElementById('mainGrid');
+            g.innerHTML = '';
+            for(let r=1; r<=cfg.rows; r++) {
+                for(let c=1; c<=cfg.cols; c++) {
+                    const k = r+'-'+c;
+                    const cell = document.createElement('div');
+                    if(cfg.removed.includes(k)) { cell.className = 'cell hidden'; } 
+                    else {
+                        const items = storage[k] || ['','','','',''];
+                        const filled = items.filter(x => x.trim() !== '').length;
+                        cell.className = 'cell' + (filled > 0 ? ' has-items' : '');
+                        cell.innerHTML = '<div class="label">'+cfg.names[k]+'</div>' + (filled > 0 ? '<div style="font-size:10px; color:#9ca3af">'+filled+'/5</div>' : '');
+                        cell.onclick = () => openM(k);
+                    }
+                    g.appendChild(cell);
+                }
+            }
+        }
+
+        function openM(k) {
+            currentK = k; document.getElementById('mTitle').innerText = cfg.names[k];
+            const items = storage[k] || ['','','','',''];
+            let h = ''; for(let i=0; i<5; i++) h += '<input type="text" id="i'+i+'" value="'+items[i]+'" placeholder="Pozycja '+(i+1)+'">';
+            document.getElementById('inps').innerHTML = h;
+            document.getElementById('modal').style.display = 'flex';
+        }
+
+        function closeM() { document.getElementById('modal').style.display = 'none'; }
+        
+        function save() {
+            const vals = []; for(let i=0; i<5; i++) vals.push(document.getElementById('i'+i).value);
+            storage[currentK] = vals; localStorage.setItem('wh_v4_data', JSON.stringify(storage));
+            closeM(); draw();
+        }
+
+        function exportToExcel() {
+            let csv = "\\uFEFFLokalizacja;Pozycja;Towar\\n";
+            // Sortowanie do excel: pionami
+            let sortedKeys = Object.keys(cfg.names).sort((a,b) => {
+                let [r1, c1] = a.split('-').map(Number); let [r2, c2] = b.split('-').map(Number);
+                return c1 !== c2 ? c1 - c2 : r1 - r2;
+            });
+            sortedKeys.forEach(k => {
+                const items = storage[k] || ['','','','',''];
+                for(let i=0; i<5; i++) csv += '"'+cfg.names[k]+'";'+(i+1)+';"'+(items[i] || '0')+'"\\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+            link.download = 'stan_magazynu.csv'; link.click();
+        }
+        draw();
+    <\/script>
+</body>
+</html>`;
+        }
+        window.onload = render;
+    </script>
+</body>
+</html>
