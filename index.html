@@ -17,18 +17,20 @@
         .cell.off{opacity:0.1; border-style: dashed;}
         .act{position:absolute;top:2px;right:2px;background:#ef4444;border:none;color:white;font-size:10px;cursor:pointer;border-radius:3px;z-index:5}
         .status-msg { margin-top: 10px; color: #10b981; font-weight: bold; display: none; }
+        .error-msg { margin-top: 10px; color: #ef4444; font-weight: bold; display: none; }
     </style>
 </head>
 <body>
 
     <div class="card toolbar">
-        <div class="field"><label>Kolumny (Piony)</label><input id="cols" type="number" value="10" onchange="render()"></div>
-        <div class="field"><label>Wiersze (Poziomy)</label><input id="rows" type="number" value="6" onchange="render()"></div>
-        <div class="field"><label>Szerokość (px)</label><input id="w" type="number" value="100" onchange="render()"></div>
-        <div class="field"><label>Wysokość (px)</label><input id="h" type="number" value="70" onchange="render()"></div>
+        <div class="field"><label>Kolumny (Piony)</label><input id="cols" type="number" value="10" min="1" max="50" onchange="render()"></div>
+        <div class="field"><label>Wiersze (Poziomy)</label><input id="rows" type="number" value="6" min="1" max="50" onchange="render()"></div>
+        <div class="field"><label>Szerokość (px)</label><input id="w" type="number" value="100" min="50" max="300" onchange="render()"></div>
+        <div class="field"><label>Wysokość (px)</label><input id="h" type="number" value="70" min="50" max="300" onchange="render()"></div>
         <button onclick="render()" class="btn">Odśwież podgląd</button>
         <button onclick="saveToFolder()" class="btn btn-exp">Zapisz Mapę</button>
         <div id="status" class="status-msg">Zapisano pomyślnie w folderze /Mapa</div>
+        <div id="error" class="error-msg"></div>
     </div>
 
     <div id="grid" class="grid"></div>
@@ -36,14 +38,34 @@
     <script>
         let removed = new Set();
 
+        // Funkcja pomocnicza do walidacji wartości liczbowych
+        function validateNumber(value, min, max, defaultVal) {
+            const num = parseInt(value) || defaultVal;
+            return Math.max(min, Math.min(max, num));
+        }
+
+        // Funkcja pomocnicza do escape'owania HTML (zapobiega XSS)
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function render() {
-            const c = +document.getElementById('cols').value;
-            const r = +document.getElementById('rows').value;
-            const w = +document.getElementById('w').value;
-            const h = +document.getElementById('h').value;
+            const c = validateNumber(document.getElementById('cols').value, 1, 50, 10);
+            const r = validateNumber(document.getElementById('rows').value, 1, 50, 6);
+            const w = validateNumber(document.getElementById('w').value, 50, 300, 100);
+            const h = validateNumber(document.getElementById('h').value, 50, 300, 70);
+            
+            // Aktualizuj wartości w inputach (na wypadek korekty)
+            document.getElementById('cols').value = c;
+            document.getElementById('rows').value = r;
+            document.getElementById('w').value = w;
+            document.getElementById('h').value = h;
             
             const container = document.getElementById('grid');
-            container.innerHTML = '';
+            const fragment = document.createDocumentFragment(); // Lepszy performance
+            
             container.style.gridTemplateColumns = `repeat(${c}, ${w}px)`;
             container.style.gridAutoRows = `${h}px`;
             container.style.gap = "10px";
@@ -60,13 +82,30 @@
                 cell.className = 'cell' + (isOff ? ' off' : '');
                 
                 if(!isOff) {
-                    cell.innerHTML = `<span style="font-weight:bold">${nameMap[key]}</span>
-                                     <button class="act" onclick="toggle('${key}')">X</button>`;
+                    const nameSpan = document.createElement('span');
+                    nameSpan.style.fontWeight = 'bold';
+                    nameSpan.textContent = nameMap[key]; // Bezpieczne - używamy textContent
+                    
+                    const btn = document.createElement('button');
+                    btn.className = 'act';
+                    btn.textContent = 'X';
+                    btn.onclick = () => toggle(key);
+                    
+                    cell.appendChild(nameSpan);
+                    cell.appendChild(btn);
                 } else {
-                    cell.innerHTML = `<button class="act" style="background:#059669" onclick="toggle('${key}')">+</button>`;
+                    const btn = document.createElement('button');
+                    btn.className = 'act';
+                    btn.style.background = '#059669';
+                    btn.textContent = '+';
+                    btn.onclick = () => toggle(key);
+                    cell.appendChild(btn);
                 }
-                container.appendChild(cell);
+                fragment.appendChild(cell);
             }
+            
+            container.innerHTML = '';
+            container.appendChild(fragment);
         }
 
         function generateVerticalNames(maxR, maxC) {
@@ -93,15 +132,39 @@
             render();
         }
 
+        function showStatus(message, isError = false) {
+            const statusEl = document.getElementById('status');
+            const errorEl = document.getElementById('error');
+            
+            if (isError) {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+                statusEl.style.display = 'none';
+                setTimeout(() => errorEl.style.display = 'none', 5000);
+            } else {
+                statusEl.textContent = message;
+                statusEl.style.display = 'block';
+                errorEl.style.display = 'none';
+                setTimeout(() => statusEl.style.display = 'none', 3000);
+            }
+        }
+
         async function saveToFolder() {
             try {
+                // Sprawdź wsparcie dla File System Access API
+                if (!window.showDirectoryPicker) {
+                    throw new Error('Twoja przeglądarka nie wspiera zapisu plików. Użyj Chrome/Edge.');
+                }
+
                 const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
                 const mapaDirHandle = await rootHandle.getDirectoryHandle('Mapa', { create: true });
                 
-                const r = +document.getElementById('rows').value;
-                const c = +document.getElementById('cols').value;
+                const r = validateNumber(document.getElementById('rows').value, 1, 50, 6);
+                const c = validateNumber(document.getElementById('cols').value, 1, 50, 10);
+                
                 const config = {
-                    cols: c, rows: r,
+                    cols: c, 
+                    rows: r,
                     w: document.getElementById('w').value,
                     h: document.getElementById('h').value,
                     removed: Array.from(removed),
@@ -113,12 +176,26 @@
                 await writable.write(generateHTML(config));
                 await writable.close();
 
-                document.getElementById('status').style.display = 'block';
-                setTimeout(() => document.getElementById('status').style.display = 'none', 3000);
-            } catch (err) { alert("Wybierz folder, aby zapisać."); }
+                showStatus('Zapisano pomyślnie w folderze /Mapa');
+            } catch (err) {
+                console.error('Błąd zapisu:', err);
+                if (err.name === 'AbortError') {
+                    showStatus('Anulowano wybór folderu', true);
+                } else {
+                    showStatus('Błąd zapisu: ' + err.message, true);
+                }
+            }
         }
 
         function generateHTML(cfg) {
+            // Escape'ujemy wszystkie wartości konfiguracyjne
+            const safeConfig = {
+                ...cfg,
+                names: Object.fromEntries(
+                    Object.entries(cfg.names).map(([k, v]) => [k, escapeHtml(v)])
+                )
+            };
+
             return `<!doctype html>
 <html lang="pl">
 <head>
@@ -136,88 +213,141 @@
         .modal-box { background: #1f2937; padding: 20px; border-radius: 12px; width: 300px; border: 1px solid #374151; }
         input { width: 100%; padding: 8px; margin: 5px 0; background: #0d1426; border: 1px solid #374151; color: white; border-radius: 4px; box-sizing: border-box; }
         button { padding: 10px; width: 100%; border: none; cursor: pointer; font-weight: bold; margin-top: 10px; border-radius: 5px; }
+        .error { color: #ef4444; font-size: 12px; margin-top: 5px; display: none; }
     </style>
 </head>
 <body>
-    <button onclick="exportToExcel()" style="background:#166534; color:white; width:auto; margin-bottom:20px; padding: 10px 20px;">Eksportuj do Excel</button>
+    <button onclick="exportToExcel()" style="background:#166534; color:white; width:auto; margin-bottom:20px; padding: 10px 20px;">Eksportuj do CSV</button>
     <div class="grid" id="mainGrid"></div>
     
     <div id="modal" class="modal">
         <div class="modal-box">
             <h3 id="mTitle" style="margin-top:0"></h3>
             <div id="inps"></div>
+            <div id="storageError" class="error">Brak miejsca w pamięci! Eksportuj dane do CSV.</div>
             <button onclick="save()" style="background:#2563eb; color:white">Zapisz</button>
             <button onclick="closeM()" style="background:#4b5563; color:white">Anuluj</button>
         </div>
     </div>
 
     <script>
-        const cfg = ${JSON.stringify(cfg)};
-        const storage = JSON.parse(localStorage.getItem('wh_v6_final') || '{}');
+        const STORAGE_KEY = 'magazyn_plyty_v1'; // Unikalny namespace
+        const cfg = ${JSON.stringify(safeConfig)};
+        const storage = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
         let currentK = '';
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
 
         function draw() {
             const g = document.getElementById('mainGrid');
-            g.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+            
             for(let r=1; r<=cfg.rows; r++) {
                 for(let c=1; c<=cfg.cols; c++) {
                     const k = r+'-'+c;
                     const cell = document.createElement('div');
+                    
                     if(cfg.removed.includes(k)) { 
                         cell.className = 'cell hidden'; 
                     } else {
                         const items = storage[k] || ['','','','',''];
                         const filled = items.filter(x => x && x.trim() !== '').length;
                         cell.className = 'cell' + (filled > 0 ? ' has-items' : '');
-                        cell.innerHTML = '<div class="label">'+(cfg.names[k] || k)+'</div>' + 
-                                         (filled > 0 ? '<div style="font-size:10px; color:#9ca3af">'+filled+'/5</div>' : '');
+                        
+                        const labelDiv = document.createElement('div');
+                        labelDiv.className = 'label';
+                        labelDiv.textContent = cfg.names[k] || k; // Bezpieczne textContent
+                        cell.appendChild(labelDiv);
+                        
+                        if (filled > 0) {
+                            const countDiv = document.createElement('div');
+                            countDiv.style.fontSize = '10px';
+                            countDiv.style.color = '#9ca3af';
+                            countDiv.textContent = filled + '/5';
+                            cell.appendChild(countDiv);
+                        }
+                        
                         cell.onclick = () => openM(k);
                     }
-                    g.appendChild(cell);
+                    fragment.appendChild(cell);
                 }
             }
+            
+            g.innerHTML = '';
+            g.appendChild(fragment);
         }
 
         function openM(k) {
-            currentK = k; 
-            document.getElementById('mTitle').innerText = cfg.names[k] || k;
+            currentK = k;
+            const titleEl = document.getElementById('mTitle');
+            titleEl.textContent = cfg.names[k] || k; // Bezpieczne textContent
+            
             const items = storage[k] || ['','','','',''];
             let h = ''; 
-            for(let i=0; i<5; i++) h += '<input type="text" id="i'+i+'" value="'+(items[i]||'')+'" placeholder="Pozycja '+(i+1)+'">';
+            for(let i=0; i<5; i++) {
+                // Escape wartości dla bezpieczeństwa
+                const safeValue = escapeHtml(items[i] || '');
+                h += '<input type="text" id="i'+i+'" value="'+safeValue+'" placeholder="Pozycja '+(i+1)+'">';
+            }
             document.getElementById('inps').innerHTML = h;
+            document.getElementById('storageError').style.display = 'none';
             document.getElementById('modal').style.display = 'flex';
         }
 
-        function closeM() { document.getElementById('modal').style.display = 'none'; }
+        function closeM() { 
+            document.getElementById('modal').style.display = 'none'; 
+        }
         
         function save() {
             const vals = []; 
-            for(let i=0; i<5; i++) vals.push(document.getElementById('i'+i).value);
-            storage[currentK] = vals; 
-            localStorage.setItem('wh_v6_final', JSON.stringify(storage));
-            closeM(); 
-            draw();
+            for(let i=0; i<5; i++) {
+                vals.push(document.getElementById('i'+i).value);
+            }
+            storage[currentK] = vals;
+            
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(storage));
+                closeM(); 
+                draw();
+            } catch(e) {
+                console.error('Storage error:', e);
+                document.getElementById('storageError').style.display = 'block';
+                // Nie zamykaj modala - daj użytkownikowi szansę na eksport
+            }
         }
 
         function exportToExcel() {
-            let csv = "\\uFEFFLokalizacja;Pozycja;Towar\\n";
+            // Używamy przecinków jako separatorów (standard CSV)
+            let csv = "\\uFEFFLokalizacja,Pozycja,Towar\\n";
+            
             let sortedKeys = Object.keys(cfg.names).sort((a,b) => {
                 let [r1, c1] = a.split('-').map(Number); 
                 let [r2, c2] = b.split('-').map(Number);
                 return c1 !== c2 ? c1 - c2 : r1 - r2;
             });
+            
             sortedKeys.forEach(k => {
                 const items = storage[k] || ['','','','',''];
                 for(let i=0; i<5; i++) {
-                    let val = (items[i] && items[i].trim() !== '') ? items[i].replace(/;/g, ",") : "0";
-                    csv += '"' + cfg.names[k] + '";' + (i+1) + ';"' + val + '"\\n';
+                    let val = (items[i] && items[i].trim() !== '') ? items[i] : "0";
+                    // Escape cudzysłowów i usuń przecinki dla bezpieczeństwa CSV
+                    val = val.replace(/"/g, '""').replace(/,/g, ' ');
+                    csv += '"' + (cfg.names[k] || k) + '",' + (i+1) + ',"' + val + '"\\n';
                 }
             });
+            
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a'); 
             link.href = URL.createObjectURL(blob);
-            link.download = 'stan_magazynu.csv'; 
+            link.download = 'stan_magazynu_' + new Date().toISOString().split('T')[0] + '.csv'; 
             link.click();
+            
+            // Cleanup
+            setTimeout(() => URL.revokeObjectURL(link.href), 100);
         }
 
         window.onload = draw;
@@ -225,6 +355,7 @@
 </body>
 </html>`;
         }
+        
         window.onload = render;
     </script>
 </body>
